@@ -6,11 +6,13 @@ import torch.optim as optim
 from net import DQN
 import torch.nn.functional as F
 from game import Game
+from timing import timer
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 Transition = namedtuple('Transition',
                        ('state', 'action', 'next_state', 'reward', 'done')) # Replay 单元
+
 
 class ReplayMemory(object):
     def __init__(self, capacity):
@@ -47,6 +49,7 @@ class DQNAgent:
         self.memory = ReplayMemory(memory_size)
         self.steps_done = 0
     
+    @timer
     def select_action(self, state, game):
         sample = random.random()
         self.steps_done += 1
@@ -103,6 +106,7 @@ class DQNAgent:
         
         return False
     
+    @timer
     def optimize_model(self):
         if len(self.memory) < self.batch_size:
             return
@@ -116,15 +120,10 @@ class DQNAgent:
         state_batch_np = np.array(batch.state)
         state_batch = torch.FloatTensor(state_batch_np).to(device)
         
-        # 处理next_state
-        next_state_batch_np = []
-        for i, next_state in enumerate(batch.next_state):
-            if non_final_mask[i]:
-                next_state_batch_np.append(next_state)
-        
-        if next_state_batch_np:
-            next_state_batch_np = np.array(next_state_batch_np)
-            non_final_next_states = torch.FloatTensor(next_state_batch_np).to(device)
+        next_states = np.array(batch.next_state)
+        non_final_mask_np = ~np.array(batch.done)
+        if np.any(non_final_mask_np):
+            non_final_next_states = torch.FloatTensor(next_states[non_final_mask_np]).to(device)
         else:
             non_final_next_states = None
         
@@ -150,6 +149,7 @@ class DQNAgent:
         # 衰减epsilon
         self.epsilon = max(self.epsilon_end, self.epsilon * self.epsilon_decay)
     
+    @timer
     def update_target_net(self):
         self.target_net.load_state_dict(self.policy_net.state_dict())
     

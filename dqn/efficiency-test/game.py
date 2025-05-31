@@ -4,6 +4,7 @@ from pynoise.noiseutil import *
 from matplotlib import pyplot as plt
 import time
 import cv2
+from timing import timer
 
 class Game:
     def __init__(self, h, w, p_mountain=0.5, p_city=0.1, n_players=2, is_preview=True):
@@ -34,6 +35,7 @@ class Game:
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             self.video_writer = cv2.VideoWriter(output, fourcc, fps, (weight, height))
     
+    @timer
     def reset(self):
         '''重置环境
 
@@ -71,12 +73,14 @@ class Game:
         self.done = np.ones((self.n_players+1,), dtype=bool)
         return self.map
 
+    @timer
     def preview(self):
         img = np.zeros((100, 100, 3), dtype=np.uint8)
         img[:, :, 0] = np.repeat(np.repeat(255 * (self.map[:, :, 2] == 1), 10, axis=0), 10, axis=1)
         img[:, :, 1] = np.repeat(np.repeat(255 * (self.map[:, :, 2] == 2), 10, axis=0), 10, axis=1)
         self.video_writer.write(img)
     
+    @timer
     def update(self):
         '''更新 Turn'''
         if self.turn % 25 == 0: # 领土全部 + 1
@@ -88,6 +92,7 @@ class Game:
 
     # source_pos: (h, w)
     # direction: (0, 1) or (0, -1) or (1, 0) or (-1, 0)
+    @timer
     def move(self, player_id, source_pos, direction):
         '''某个玩家 i 进行一步操作
 
@@ -187,6 +192,7 @@ class Game:
         
         return state
     
+    @timer
     def step(self, player_id, action):
         '''智能体 `player_id` 进行一次交互
         
@@ -208,6 +214,7 @@ class Game:
         new_state = self._get_state(player_id)
         return new_state, reward, done, success
     
+    @timer
     def _encode_action(self, source_pos, direction):
         direction_idx = {
             (0, 1): 0,  # 右
@@ -217,6 +224,7 @@ class Game:
         }[direction]
         return source_pos[0] * self.w * 4 + source_pos[1] * 4 + direction_idx
     
+    @timer
     def _decode_action(self, action_idx):
         directions = [(0, 1), (1, 0), (0, -1), (-1, 0)]  # 右、下、左、上
         direction_idx = action_idx % 4
@@ -225,9 +233,11 @@ class Game:
         source_col = source_idx % self.w
         return (source_row, source_col), directions[direction_idx]
     
+    @timer
     def _get_action_space_size(self):
         return self.h * self.w * 4
 
+    @timer
     def _calculate_reward(self, player_id, success):
         '''计算玩家 `player_id` 的奖励'''
         reward = 0
@@ -248,6 +258,7 @@ class Game:
             reward += 10
         return reward
     
+    @timer
     def _check_done(self):
         '''检查游戏是否结束
         

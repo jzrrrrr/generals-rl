@@ -116,15 +116,10 @@ class DQNAgent:
         state_batch_np = np.array(batch.state)
         state_batch = torch.FloatTensor(state_batch_np).to(device)
         
-        # 处理next_state
-        next_state_batch_np = []
-        for i, next_state in enumerate(batch.next_state):
-            if non_final_mask[i]:
-                next_state_batch_np.append(next_state)
-        
-        if next_state_batch_np:
-            next_state_batch_np = np.array(next_state_batch_np)
-            non_final_next_states = torch.FloatTensor(next_state_batch_np).to(device)
+        next_states = np.array(batch.next_state)
+        non_final_mask_np = ~np.array(batch.done)
+        if np.any(non_final_mask_np):
+            non_final_next_states = torch.FloatTensor(next_states[non_final_mask_np]).to(device)
         else:
             non_final_next_states = None
         
