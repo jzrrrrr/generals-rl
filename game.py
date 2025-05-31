@@ -4,11 +4,6 @@ from pynoise.noiseutil import *
 from matplotlib import pyplot as plt
 import time
 
-
-# 第 0 维: 4 将军, 3 城市, 2 山, 1 玩家领土, 0 空
-# 第 1 维: i 兵力数
-# 第 2 维: i 属于玩家 i (in [1, n_players])
-
 class Game:
     def __init__(self, h, w, p_mountain=0.5, p_city=0.1, n_players=2):
         '''创建环境对象
@@ -35,7 +30,7 @@ class Game:
         '''重置环境
 
         Returns:
-            初始状态，形状为 `(h, w, 3)`
+            初始 map，形状为 `(h, w, 3)`
             - 第 0 维: 格子类型, 4 将军, 3 城市, 2 山, 1 玩家领土, 0 空
             - 第 1 维: 格子兵力数
             - 第 2 维: 占有此处的玩家 ID [1, n_players], 0 表示空地或山
@@ -66,7 +61,7 @@ class Game:
         self.map = map
         self.turn = 0
         self.done = np.ones((self.n_players+1,), dtype=bool)
-        return self.state()
+        return self.map
 
     def render(self):
         '''可视化当前地图状态'''
@@ -88,13 +83,6 @@ class Game:
             self.map[self.map[:, :, 0] == 1, 1] += 1
         self.map[(self.map[:, :, 0] == 3) | (self.map[:, :, 0] == 4), 1] += 1 # 城市和将军 + 1
         self.turn += 1
-
-    def state(self):
-        '''获取当前状态
-        Returns:
-            当前状态，形状为 `(h, w, 3)`
-        '''
-        return self.map
 
     # source_pos: (h, w)
     # direction: (0, 1) or (0, -1) or (1, 0) or (-1, 0)
@@ -124,6 +112,7 @@ class Game:
             target_pos = (source_pos[0] + direction[0], source_pos[1] + direction[1])
         else:
             return None
+        
         # 没有超出边界，没有撞山
         if self.map[target_pos[0], target_pos[1], 0] == 2 or target_pos[0] < 0 or target_pos[0] >= self.h\
             or target_pos[1] < 0 or target_pos[1] >= self.w:
@@ -131,9 +120,11 @@ class Game:
         else:
             moving = self.map[source_pos[0], source_pos[1], 1] - 1
             self.map[source_pos[0], source_pos[1], 1] = 1
+
             if self.map[target_pos[0], target_pos[1], 2] == player_id: # 是自己家
                 self.map[target_pos[0], target_pos[1], 1] += moving
                 final_return = [1, self.map[target_pos[0], target_pos[1], 1]]
+
             else: # 不是自己家
                 self.map[target_pos[0], target_pos[1], 1] -= moving
                 if self.map[target_pos[0], target_pos[1], 1] < 0:
@@ -143,19 +134,54 @@ class Game:
                         self.map[target_pos[0], target_pos[1], 0] = 3 # 变成城市
                         self.done[self.map[target_pos[0], target_pos[1], 2]] = False # 这个位置的玩家输了
                         final_return = [4, self.map[target_pos[0], target_pos[1], 1]]
+
                     elif self.map[target_pos[0], target_pos[1], 0] == 0: # 攻陷的是空地
                         self.map[target_pos[0], target_pos[1], 0] = 1 # 变成玩家领土
                         final_return = [3, self.map[target_pos[0], target_pos[1], 1]]
-                    elif self.map[target_pos[0], target_pos[1], 0] == 0: # 攻陷的是敌人领土
+
+                    elif self.map[target_pos[0], target_pos[1], 0] == 1: # 攻陷的是敌人领土
                         final_return = [2, self.map[target_pos[0], target_pos[1], 1]]
+
                     elif self.map[target_pos[0], target_pos[1], 0] == 3: # 攻陷的是敌人城市
                         final_return = [5, self.map[target_pos[0], target_pos[1], 1]]
+                        
         return final_return
-        # 1: 兵力集聚
-        # 2: 攻陷敌人领土
-        # 3: 拓广空地
-        # 4: 攻陷敌人将军
-        # 5: 攻陷敌人城市
+    
+    def _get_state(self, player_id):
+        '''获取玩家 `player_id` 的状态表示
+        
+        Args:
+            player_id: 玩家 ID，从 `1` 开始到 `n_players`
+        
+        Returns:
+            state: 状态表示，形状为 `(h, w, 7)`
+            - 第 0 维: 玩家领土二值掩码
+            - 第 1 维: 敌方领土二值掩码
+            - 第 2 维: 空地二值掩码
+            - 第 3 维: 山地二值掩码
+            - 第 4 维: 玩家兵力分布归一化
+            - 第 5 维: 敌方兵力分布归一化
+            - 第 6 维: 城市二值掩码
+            - 第 7 维: 将军二值掩码
+        '''
+
+        state = np.zeros((self.h, self.w, 8), dtype=np.float32)
+        state[:,:,0] = (self.map[:,:,2] == player_id).astype(float) # 玩家领土二值掩码
+        state[:,:,1] = ((self.map[:,:,2] > 0) & (self.map[:,:,2] != player_id)).astype(float) # 敌方领土二值掩码
+        state[:,:,2] = (self.map[:,:,0] == 0).astype(float) # 空地二值掩码
+        state[:,:,3] = (self.map[:,:,0] == 2).astype(float) # 山地二值掩码
+
+        player_mask = (self.map[:,:,2] == player_id)
+        max_army = np.max(self.map[:,:,1]) if np.max(self.map[:,:,1]) > 0 else 1
+        state[:,:,4][player_mask] = self.map[:,:,1][player_mask] / max_army # 玩家兵力分布归一化
+        
+        enemy_mask = ((self.map[:,:,2] > 0) & (self.map[:,:,2] != player_id))
+        state[:,:,5][enemy_mask] = self.map[:,:,1][enemy_mask] / max_army # 敌方兵力分布归一化
+
+        state[:,:,6] = (self.map[:,:,0] == 3).astype(float) # 城市二值掩码
+        state[:,:,7] = (self.map[:,:,0] == 4).astype(float) # 将军二值掩码
+        
+        return state
     
     def step(self, player_id, action):
         '''智能体 `player_id` 进行一次交互
@@ -175,27 +201,43 @@ class Game:
         success = self.move(player_id, source_pos, direction)
         reward = self._calculate_reward(player_id, success)
         done = self._check_done()
-        new_state = self.state()
+        new_state = self._get_state(player_id)
         return new_state, reward, done, success
+    
+    def _encode_action(self, source_pos, direction):
+        direction_idx = {
+            (0, 1): 0,  # 右
+            (1, 0): 1,  # 下
+            (0, -1): 2, # 左
+            (-1, 0): 3  # 上
+        }[direction]
+        return source_pos[0] * self.w * 4 + source_pos[1] * 4 + direction_idx
+    
+    def _decode_action(self, action_idx):
+        directions = [(0, 1), (1, 0), (0, -1), (-1, 0)]  # 右、下、左、上
+        direction_idx = action_idx % 4
+        source_idx = action_idx // 4
+        source_row = source_idx // self.w
+        source_col = source_idx % self.w
+        return (source_row, source_col), directions[direction_idx]
+    
+    def _get_action_space_size(self):
+        return self.h * self.w * 4
 
     def _calculate_reward(self, player_id, success):
         '''计算玩家 `player_id` 的奖励'''
         reward = 0
-        if not success: # 错误移动
-            reward += -2
-        elif success[0] == 1: # 兵力集聚
-            reward += 0.1
-        elif success[0] == 2: # 攻陷敌人领土
-            reward += 0.2
-        elif success[0] == 3: # 拓广空地
-            reward += 0.1
-        elif success[0] == 4: # 攻陷敌人将军
-            reward += 3.0
-        elif success[0] == 5: # 攻陷敌人城市
-            reward += 1.0
+        reward += {
+            1: 0.1,  # 兵力集聚
+            2: 0.2,  # 攻陷敌人领土
+            3: 0.1,  # 拓广空地
+            4: 3.0,  # 攻陷敌人将军
+            5: 1.0   # 攻陷敌人城市
+        }[success[0]] if success else -2
+
         if not self.done[player_id]: # 输了
             reward += -10
-        if self._check_done() and self.done[player_id]: # 赢了
+        elif self._check_done(): # 赢了
             reward += 10
         return reward
     
